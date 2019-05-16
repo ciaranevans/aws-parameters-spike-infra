@@ -2,6 +2,10 @@ variable "region" {
     default = "eu-west-2"
 }
 
+variable "app_name" {
+    default = "aws-parameters-spike"
+}
+
 variable "az_count" {
     description = "Number of AZs to cover in a given AWS region"
     default     = "2"
@@ -25,4 +29,12 @@ variable "fargate_memory" {
 
 variable "app_count" {
     default = 1
+}
+
+data "task-execution-assume-role" {
+    default = "${file("json/task-execution-assume-role.json")}"
+}
+
+variable "ecs-task-execution-policy-arn" {
+    default = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }

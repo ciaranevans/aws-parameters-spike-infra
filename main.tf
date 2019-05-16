@@ -62,7 +62,7 @@ resource "aws_route_table_association" "private" {
 }
 
 resource "aws_security_group" "lb" {
-  name        = "tf-ecs-alb"
+  name        = "${var.app_name}-alb"
   description = "controls access to the ALB"
   vpc_id      = "${aws_vpc.main.id}"
 
@@ -70,7 +70,7 @@ resource "aws_security_group" "lb" {
     protocol    = "tcp"
     from_port   = 80
     to_port     = 80
-    cidr_blocks = ["62.172.108.0/24"]
+    cidr_blocks = ["62.172.108.0/24", ]
   }
 
   egress {
@@ -82,7 +82,7 @@ resource "aws_security_group" "lb" {
 }
 
 resource "aws_security_group" "ecs_tasks" {
-  name        = "tf-ecs-tasks"
+  name        = "${var.app_name}-tasks"
   description = "allow inbound access from the ALB only"
   vpc_id      = "${aws_vpc.main.id}"
 
@@ -102,13 +102,13 @@ resource "aws_security_group" "ecs_tasks" {
 }
 
 resource "aws_alb" "main" {
-  name            = "tf-ecs-chat"
+  name            = "${var.app_name}-alb"
   subnets         = ["${aws_subnet.public.*.id}"]
   security_groups = ["${aws_security_group.lb.id}"]
 }
 
 resource "aws_alb_target_group" "app" {
-  name        = "tf-ecs-chat"
+  name        = "${var.app_name}-atg"
   port        = 80
   protocol    = "HTTP"
   vpc_id      = "${aws_vpc.main.id}"
@@ -127,16 +127,31 @@ resource "aws_alb_listener" "front_end" {
 }
 
 resource "aws_ecs_cluster" "main" {
-  name = "aws-parameter-spike-cluster"
+  name = "${var.app_name}-cluster"
+}
+
+resource "aws_cloudwatch_log_group" "main_logs" {
+  name = "${var.app_name}-logs"
+}
+
+resource "aws_iam_role" "execution_role" {
+  name = "${var.app_name}-execution-role"
+  assume_role_policy = "${data.task-execution-assume-role}"
+}
+
+resource "aws_iam_policy_attachment" "execution-role-policy-attachment" {
+  name = "${aws_iam_role.execution_role.name}-pa"
+  roles = ["${aws_iam_role.execution_role.name}"]
+  policy_arn = "${var.ecs-task-execution-policy-arn}"
 }
 
 resource "aws_ecs_task_definition" "app" {
-  family                   = "app"
+  family                   = "${var.app_name}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "${var.fargate_cpu}"
   memory                   = "${var.fargate_memory}"
-  execution_role_arn = "arn:aws:iam::748740125416:role/ecsTaskExecutionRole"
+  execution_role_arn = "${aws_iam_role.execution_role.arn}"
 
   container_definitions = <<DEFINITION
 [
@@ -144,7 +159,7 @@ resource "aws_ecs_task_definition" "app" {
     "cpu": ${var.fargate_cpu},
     "image": "${var.app_image}",
     "memory": ${var.fargate_memory},
-    "name": "app",
+    "name": "${var.app_name}",
     "networkMode": "awsvpc",
     "portMappings": [
       {
@@ -158,7 +173,7 @@ resource "aws_ecs_task_definition" "app" {
     "logConfiguration": {
       "logDriver": "awslogs",
       "options": {
-        "awslogs-group" : "awslogs-ciarans-app",
+        "awslogs-group" : "${var.app_name}-logs",
         "awslogs-region" : "${var.region}",
         "awslogs-stream-prefix" : "awslogs"
       }
@@ -169,7 +184,7 @@ DEFINITION
 }
 
 resource "aws_ecs_service" "main" {
-  name            = "tf-ecs-service"
+  name            = "${var.app_name}"
   cluster         = "${aws_ecs_cluster.main.id}"
   task_definition = "${aws_ecs_task_definition.app.arn}"
   desired_count   = "${var.app_count}"
@@ -182,7 +197,7 @@ resource "aws_ecs_service" "main" {
 
   load_balancer {
     target_group_arn = "${aws_alb_target_group.app.id}"
-    container_name   = "app"
+    container_name   = "${var.app_name}"
     container_port   = "${var.app_port}"
   }
 
